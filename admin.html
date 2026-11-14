@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin · PasundanEdu</title><meta name="robots" content="noindex">
+<style>
+:root{--g:#0f5a4c;--line:#d6e6e0;--mist:#eef7f4;--ink:#121723;--red:#cc0d0c}
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--mist)}
+header{background:var(--g);color:#fff;display:flex;gap:16px;align-items:center;padding:12px 20px;flex-wrap:wrap}
+header a{color:#cfe4dc}header nav{display:flex;gap:6px;margin-left:12px;flex:1;flex-wrap:wrap}
+header button{background:none;border:0;color:#dcebe6;padding:8px 14px;border-radius:12px;font:inherit;font-weight:600;cursor:pointer}
+header button[aria-current=true]{background:rgba(255,255,255,.18);color:#fff}
+main{padding:20px;max-width:1300px;margin:0 auto}
+.bar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}.bar .sp{flex:1}
+button.b{background:var(--g);color:#fff;border:0;border-radius:10px;padding:8px 14px;font:inherit;font-weight:600;cursor:pointer}
+button.b.l{background:#fff;color:var(--g);border:1px solid var(--line)}button.b.r{background:#fff;color:var(--red);border:1px solid var(--line)}
+.wrap{overflow-x:auto;background:#fff;border:1px solid var(--line);border-radius:14px}
+table{border-collapse:collapse;width:100%;min-width:760px}th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+th{background:#f6faf8;font-size:.82rem}td input[type=text],td input[type=number],td select,td textarea{width:100%;min-width:70px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;font:inherit}
+td.d{background:#fffbe0}.msg{padding:10px 14px;border-radius:10px;background:#fff;border:1px solid var(--line)}.ok{color:var(--g)}.er{color:var(--red)}
+details pre{white-space:pre-wrap;margin:6px 0 0;font:13px/1.4 ui-monospace,monospace}
+</style></head><body>
+<header><b>PasundanEdu Admin</b><nav id="tabs"></nav><a href="/">Ke situs</a></header>
+<main id="app"><p class="msg">Memuat…</p></main>
+<script>
+const $ = s => document.querySelector(s), HDR = { "Content-Type": "application/json", "X-Requested-With": "pasundanedu" };
+const h = (t, a = {}, ...k) => { const e = document.createElement(t); for (const x in a) { if (x === "on") for (const ev in a.on) e.addEventListener(ev, a.on[ev]); else if (x in e && x !== "list") e[x] = a[x]; else e.setAttribute(x, a[x]); } e.append(...k.flat().filter(v => v != null)); return e; };
+const get = w => fetch("/api/admin?what=" + w, { cache: "no-store" }).then(async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || "Galat " + r.status); return j; });
+const post = b => fetch("/api/admin", { method: "POST", headers: HDR, body: JSON.stringify(b) }).then(async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || "Galat " + r.status); return j; });
+const app = $("#app"), say = (m, bad) => { const e = $("#say") || app.prepend(h("p", { id: "say", className: "msg" })) || $("#say"); e.className = "msg " + (bad ? "er" : "ok"); e.textContent = m; };
+const STAT = ["baru", "diproses", "siap", "selesai", "batal"];
+const TABS = { submissions: "Pengajuan", books: "Buku", videos: "Video", topups: "Top-up Kredit", affiliate: "Affiliate" };
+const COLS = {
+  books: [["id", "ID"], ["judul", "Judul"], ["penulis", "Penulis"], ["kat", "Kategori"], ["pinjam", "Pinjam", "b"], ["beli", "Beli", "b"], ["harga", "Harga", "n"], ["sp", "Stok pinjam", "n"], ["sb", "Stok beli", "n"], ["aktif", "Tampil", "b"]],
+  videos: [["id", "ID"], ["judul", "Judul"], ["kat", "Kategori"], ["youtube", "YouTube (ID/URL)"], ["mp4", "Berkas mp4"], ["terkait", "Terkait"], ["ai_jenis", "AI jenis"], ["ai_task", "AI tugas"], ["aktif", "Tampil", "b"]]
+};
+const fmt = t => new Date(t * 1000).toLocaleString("id-ID");
+
+function tabs(cur) { $("#tabs").replaceChildren(...Object.entries(TABS).map(([k, v]) => h("button", { "aria-current": String(k === cur), on: { click: () => load(k) } }, v))); }
+
+function sheet(what, rows) {
+  if (what === "videos") rows.forEach(r => { r.ai_jenis = r.ai ? r.ai.jenis : ""; r.ai_task = r.ai ? r.ai.task : ""; });
+  const cols = COLS[what], body = h("tbody");
+  const addRow = r => {
+    const tr = h("tr", {}, ...cols.map(([k, , t]) => {
+      const td = h("td"), mark = () => td.classList.add("d");
+      if (t === "b") td.append(h("input", { type: "checkbox", checked: r[k] !== false && !!r[k] || (k === "aktif" && r[k] !== false), on: { change: e => { r[k] = e.target.checked; mark(); } } }));
+      else td.append(h("input", { type: t === "n" ? "number" : "text", min: 0, value: r[k] ?? "", on: { input: e => { r[k] = e.target.value; mark(); } } }));
+      return td;
+    }), h("td", {}, h("button", { className: "b r", type: "button", on: { click: () => { rows.splice(rows.indexOf(r), 1); tr.remove(); } } }, "Hapus")));
+    body.append(tr);
+  };
+  rows.forEach(addRow);
+  const save = async () => {
+    const out = rows.map(r => { const o = { ...r }; if (what === "videos") { o.ai = o.ai_jenis && o.ai_task ? { jenis: o.ai_jenis, task: o.ai_task } : null; delete o.ai_jenis; delete o.ai_task; } return o; });
+    try { const j = await post({ action: "save", what, rows: out }); say(`Tersimpan: ${j.count} baris. Baris tanpa judul (atau video tanpa sumber) otomatis dibuang.`); load(what, true); } catch (e) { say(e.message, true); }
+  };
+  return [h("div", { className: "bar" }, h("button", { className: "b", on: { click: save } }, "Simpan"), h("button", { className: "b l", on: { click: () => { const r = { aktif: true }; rows.push(r); addRow(r); } } }, "+ Tambah baris"),
+    h("span", { className: "sp" }), h("small", {}, "Sel kuning = belum disimpan. Urutan baris = urutan di situs. Kategori memakai kode huruf kecil, mis. metode, skripsi.")),
+    h("div", { className: "wrap" }, h("table", {}, h("thead", {}, h("tr", {}, ...cols.map(c => h("th", {}, c[1])), h("th"))), body))];
+}
+
+function subs(rows) {
+  const csv = () => {
+    const q = v => '"' + String(v ?? "").replace(/"/g, '""').replace(/^([=+\-@])/, "'$1") + '"';
+    const f = ["kode", "tipe", "waktu", "nama", "nim", "prodi", "wa", "email", "ringkas", "jadwal", "via", "status", "catatan"];
+    const t = [f.join(","), ...rows.map(r => f.map(k => q(k === "waktu" ? fmt(r.waktu) : r[k])).join(","))].join("\n");
+    h("a", { href: URL.createObjectURL(new Blob(["\ufeff" + t], { type: "text/csv" })), download: "pengajuan.csv" }).click();
+  };
+  const body = h("tbody", {}, ...rows.map(r => {
+    const st = h("select", {}, ...STAT.map(s => h("option", { value: s, selected: s === r.status }, s))), nt = h("textarea", { rows: 2, value: r.catatan || "" });
+    return h("tr", {}, h("td", {}, h("b", {}, r.kode), h("br"), h("small", {}, fmt(r.waktu))),
+      h("td", {}, r.nama, h("br"), h("small", {}, [r.nim, r.prodi, r.tipe].filter(Boolean).join(" · "))),
+      h("td", {}, r.ringkas, h("details", {}, h("summary", {}, "Detail"), h("pre", {}, r.detail), h("p", {}, h("a", { href: "https://wa.me/" + r.wa, target: "_blank", rel: "noopener" }, "WhatsApp " + r.wa), r.email ? [" · ", h("a", { href: "mailto:" + r.email }, r.email)] : ""))),
+      h("td", {}, st), h("td", {}, nt),
+      h("td", {}, h("button", { className: "b", on: { click: async () => { try { await post({ action: "status", kode: r.kode, status: st.value, catatan: nt.value }); say("Tersimpan: " + r.kode); } catch (e) { say(e.message, true); } } } }, "Simpan"), " ",
+        h("button", { className: "b r", on: { click: async () => { if (!confirm("Hapus " + r.kode + "? Tidak bisa dibatalkan.")) return; try { await post({ action: "delete", kode: r.kode }); load("submissions", true); } catch (e) { say(e.message, true); } } } }, "Hapus")));
+  }));
+  return [h("div", { className: "bar" }, h("b", {}, rows.length + " pengajuan"), h("span", { className: "sp" }), h("button", { className: "b l", on: { click: csv } }, "Ekspor CSV")),
+    h("div", { className: "wrap" }, h("table", {}, h("thead", {}, h("tr", {}, ...["Kode", "Pemohon", "Ringkasan", "Status", "Catatan admin (tidak terlihat mahasiswa)", ""].map(x => h("th", {}, x)))), body))];
+}
+
+function topups(rows) {
+  const act = (action, id, extra) => async () => {
+    let catatan;
+    if (action === "topup-reject") catatan = prompt("Alasan ditolak (opsional):") || "";
+    try { await post({ action, id, catatan, ...extra }); say(action === "topup-approve" ? "Top-up disetujui, saldo sudah ditambahkan." : "Pengajuan ditolak."); load("topups", true); }
+    catch (e) { say(e.message, true); }
+  };
+  const body = h("tbody", {}, ...rows.map(r => h("tr", {},
+    h("td", {}, h("b", {}, r.nama), h("br"), h("small", {}, r.uid)),
+    h("td", {}, (r.jumlah > 0 ? "+" : "") + r.jumlah + " kredit"),
+    h("td", {}, r.catatan || ""),
+    h("td", {}, fmt(r.waktu)),
+    h("td", {}, r.status === "menunggu" ? "Menunggu" : r.status === "disetujui" ? "Disetujui" : "Ditolak"),
+    h("td", {}, r.status === "menunggu" ? [h("button", { className: "b", type: "button", on: { click: act("topup-approve", r.id) } }, "Setujui"), " ",
+      h("button", { className: "b r", type: "button", on: { click: act("topup-reject", r.id) } }, "Tolak")] : ""))));
+  return [h("div", { className: "bar" }, h("b", {}, rows.length + " pengajuan top-up"), h("span", { className: "sp" }), h("small", {}, "Hubungi mahasiswa lewat WhatsApp untuk memastikan pembayaran sebelum menyetujui.")),
+    h("div", { className: "wrap" }, h("table", {}, h("thead", {}, h("tr", {}, ...["Mahasiswa", "Jumlah", "Catatan", "Waktu", "Status", ""].map(x => h("th", {}, x)))), body))];
+}
+
+function affiliate(rows) {
+  const act = (action, id) => async () => {
+    let catatan;
+    if (action === "affiliate-reject") catatan = prompt("Alasan ditolak (opsional):") || "";
+    try { await post({ action, id, catatan }); say(action === "affiliate-approve" ? "Klaim disetujui, bonus kredit sudah diberikan ke keduanya." : "Klaim ditolak."); load("affiliate", true); }
+    catch (e) { say(e.message, true); }
+  };
+  const body = h("tbody", {}, ...rows.map(r => h("tr", {},
+    h("td", {}, h("b", {}, r.nama), h("br"), h("small", {}, r.uid)),
+    h("td", {}, "Kode " + r.kode + " milik " + r.namaPemilikKode),
+    h("td", {}, fmt(r.waktu)),
+    h("td", {}, r.status === "menunggu" ? "Menunggu" : r.status === "disetujui" ? "Disetujui" : "Ditolak"),
+    h("td", {}, r.status === "menunggu" ? [h("button", { className: "b", type: "button", on: { click: act("affiliate-approve", r.id) } }, "Setujui"), " ",
+      h("button", { className: "b r", type: "button", on: { click: act("affiliate-reject", r.id) } }, "Tolak")] : ""))));
+  return [h("div", { className: "bar" }, h("b", {}, rows.length + " klaim referral"), h("span", { className: "sp" }), h("small", {}, "Menyetujui akan memberi bonus kredit ke mahasiswa ini dan ke pemilik kode.")),
+    h("div", { className: "wrap" }, h("table", {}, h("thead", {}, h("tr", {}, ...["Mahasiswa", "Detail", "Waktu", "Status", ""].map(x => h("th", {}, x)))), body))];
+}
+
+async function load(what, keepMsg) {
+  const m = keepMsg && $("#say") ? $("#say").cloneNode(true) : null;
+  tabs(what); app.replaceChildren(h("p", { className: "msg" }, "Memuat…"));
+  try {
+    const j = await get(what);
+    app.replaceChildren(...(what === "submissions" ? subs(j.rows)
+      : what === "topups" ? topups(j.rows)
+      : what === "affiliate" ? affiliate(j.rows)
+      : [j.seed ? h("p", { className: "msg" }, "Belum ada data tersimpan: ini daftar bawaan situs. Ubah lalu klik Simpan untuk menyimpannya ke database.") : null, ...sheet(what, j.rows)]));
+    if (m) app.prepend(m);
+  } catch (e) { app.replaceChildren(h("p", { className: "msg er" }, e.message)); }
+}
+fetch("/api/auth?a=me", { cache: "no-store" }).then(r => r.json().catch(() => ({}))).then(j => {
+  if (!j.user) return app.replaceChildren(h("p", { className: "msg" }, "Anda belum masuk. ", h("a", { href: "/" }, "Masuk di halaman utama"), " dengan akun admin."));
+  if (j.user.peran !== "Admin") return app.replaceChildren(h("p", { className: "msg er" }, "Akun ini bukan admin."));
+  load("submissions");
+});
+</script></body></html>
